@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>System Stats (Last 1 Hour)</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #fafafa;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 4px 8px;
+            text-align: right;
+        }
+
+        th {
+            background: #eee;
+        }
+    </style>
+</head>
+
+<body>
+    <h3>System Stats (Last 1 Hour)</h3>
+    <table>
+        <tr>
+            <th>Time</th>
+            <th>CPU %</th>
+            <th>RAM %</th>
+            <th>Disk %</th>
+            <th>Inode %</th>
+        </tr>
+        <% rows.forEach(r=> { %>
+            <tr>
+                <td>
+                    <%= new Date(r.timestamp * 1000).toLocaleTimeString() %>
+                </td>
+                <td>
+                    <%= r.cpu.toFixed(1) %>
+                </td>
+                <td>
+                    <%= r.ram.toFixed(1) %>
+                </td>
+                <td>
+                    <%= r.disk.toFixed(1) %>
+                </td>
+                <td>
+                    <%= r.inode.toFixed(1) %>
+                </td>
+            </tr>
+            <% }) %>
+    </table>
+</body>
+
+</html>
