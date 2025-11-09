@@ -205,7 +205,7 @@ void send_post_async(const Endpoint &ep, const string &json, const string &apiKe
             mbedtls_strerror(ret, errbuf, sizeof(errbuf));
             cerr << "[TLS] write failed: " << errbuf << endl;
         } else {
-            cout << "[sent] " << json << endl;
+            // cout << "[sent] " << json << endl;
         }
 
     cleanup:
@@ -237,8 +237,8 @@ int main(int argc, char *argv[])
     string serverName = argv[2];
     string apiKey = argv[3];
 
-    cout << "Sending stats to " << ep.scheme << "://" << ep.host
-         << ":" << ep.port << ep.path << " as " << serverName << endl;
+    // cout << "Sending stats to " << ep.scheme << "://" << ep.host
+    //      << ":" << ep.port << ep.path << " as " << serverName << endl;
 
     while (true)
     {
