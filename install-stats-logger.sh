@@ -27,7 +27,7 @@ ENDPOINT="$3"
 if [[ -z "$SERVER_NAME" || -z "$API_KEY" ]]; then
   echo "Usage: $0 <server_name> <api_key> [endpoint]"
   echo "Example:"
-  echo "  bash <(wget -qO- $GITHUB_URL) us6 Aspirate9-Decoy-Getaway-Net"
+  echo "  bash <(wget -qO- https://cdn.statically.io/gh/CovertCode/server-logger/main/install-stats-logger.sh) us6 Aspirate9-Decoy-Getaway-Net"
   exit 1
 fi
 
@@ -48,6 +48,25 @@ info "Downloading latest stats_logger binary..."
 sudo wget -q -O "$INSTALL_PATH" "$GITHUB_URL" || error_exit "Failed to download binary"
 sudo chmod +x "$INSTALL_PATH"
 success "Installed binary to $INSTALL_PATH"
+
+# -----------------------------
+# Increase inotify limits safely
+# -----------------------------
+info "Adjusting inotify system limits..."
+if ! grep -q "fs.inotify.max_user_watches" /etc/sysctl.conf; then
+  echo "fs.inotify.max_user_watches=524288" | sudo tee -a /etc/sysctl.conf >/dev/null
+else
+  sudo sed -i 's/^fs\.inotify\.max_user_watches=.*/fs.inotify.max_user_watches=524288/' /etc/sysctl.conf
+fi
+
+if ! grep -q "fs.inotify.max_user_instances" /etc/sysctl.conf; then
+  echo "fs.inotify.max_user_instances=1024" | sudo tee -a /etc/sysctl.conf >/dev/null
+else
+  sudo sed -i 's/^fs\.inotify\.max_user_instances=.*/fs.inotify.max_user_instances=1024/' /etc/sysctl.conf
+fi
+
+sudo sysctl -p >/dev/null
+success "Inotify limits updated and applied."
 
 # -----------------------------
 # Create systemd service file
