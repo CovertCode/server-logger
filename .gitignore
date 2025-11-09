@@ -5,5 +5,4 @@ stats.db
 .env
 stats.db-shm
 stats.db-wal
-stats.db
-stats.db-shm
+
