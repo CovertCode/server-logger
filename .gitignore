@@ -3,3 +3,6 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 stats.db
 .env
+stats.db-shm
+stats.db-wal
+stats.db
