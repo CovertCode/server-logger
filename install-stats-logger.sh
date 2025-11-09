@@ -13,32 +13,30 @@ DEFAULT_ENDPOINT="http://152.53.50.193:14782/system-stats"
 # -----------------------------
 # Helper functions
 # -----------------------------
-function info() { echo -e "\033[1;34m→\033[0m $1"; }
+function info()    { echo -e "\033[1;34m→\033[0m $1"; }
 function success() { echo -e "\033[1;32m✓\033[0m $1"; }
 function error_exit() { echo -e "\033[1;31m✗ $1\033[0m"; exit 1; }
 
 # -----------------------------
-# Prompt user for inputs
+# Parse arguments
 # -----------------------------
-echo "=== 🛰️  System Stats Logger Installer ==="
-read -rp "Enter server name (e.g., in1): " SERVER_NAME
-read -rp "Enter API key: " API_KEY
-read -rp "Enter endpoint [default: ${DEFAULT_ENDPOINT}]: " ENDPOINT
+SERVER_NAME="$1"
+API_KEY="$2"
+ENDPOINT="$3"
+
+if [[ -z "$SERVER_NAME" || -z "$API_KEY" ]]; then
+  echo "Usage: $0 <server_name> <api_key> [endpoint]"
+  echo "Example:"
+  echo "  bash <(wget -qO- $GITHUB_URL) us6 Aspirate9-Decoy-Getaway-Net"
+  exit 1
+fi
+
 ENDPOINT=${ENDPOINT:-$DEFAULT_ENDPOINT}
-
-echo ""
-echo "Server Name : $SERVER_NAME"
-echo "API Key     : $API_KEY"
-echo "Endpoint    : $ENDPOINT"
-echo ""
-
-read -rp "Proceed with installation? (y/n): " confirm
-[[ $confirm =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
 
 # -----------------------------
 # Install dependencies
 # -----------------------------
-info "Updating apt and installing required dependencies..."
+info "Updating apt and installing dependencies..."
 sudo apt update -y
 sudo apt install -y wget curl libmbedtls-dev || error_exit "Failed to install dependencies"
 success "Dependencies installed (wget, curl, libmbedtls-dev)"
