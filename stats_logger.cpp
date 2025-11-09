@@ -9,7 +9,7 @@
 #include <cstring>
 #include <regex>
 
-// ---- mbedTLS headers ----
+// ---- mbedTLS ----
 #include <mbedtls/net_sockets.h>
 #include <mbedtls/ssl.h>
 #include <mbedtls/entropy.h>
@@ -19,20 +19,26 @@
 using namespace std;
 
 // =======================================================
-// Parse endpoint
+// Struct for parsed endpoint
 // =======================================================
-struct Endpoint {
+struct Endpoint
+{
     string scheme, host, path;
     int port = 0;
     bool isHttps = false;
     bool valid = false;
 };
 
-Endpoint parseUrl(const string &url) {
+// =======================================================
+// Parse URL
+// =======================================================
+Endpoint parseUrl(const string &url)
+{
     Endpoint ep;
     regex re(R"((https?):\/\/([^\/:]+)(:(\d+))?(\/.*))");
     smatch m;
-    if (!regex_match(url, m, re)) {
+    if (!regex_match(url, m, re))
+    {
         cerr << "Invalid URL. Use http[s]://host[:port]/path\n";
         return ep;
     }
@@ -46,9 +52,10 @@ Endpoint parseUrl(const string &url) {
 }
 
 // =======================================================
-// Collect system stats
+// Collect system metrics
 // =======================================================
-double get_cpu_usage() {
+double get_cpu_usage()
+{
     static long prev_idle = 0, prev_total = 0;
     ifstream f("/proc/stat");
     string cpu;
@@ -63,39 +70,58 @@ double get_cpu_usage() {
     return diff_total ? (100.0 * (diff_total - diff_idle) / diff_total) : 0.0;
 }
 
-double get_ram_usage() {
+double get_ram_usage()
+{
     ifstream f("/proc/meminfo");
-    string key; long total = 0, avail = 0;
-    while (f >> key) {
-        if (key == "MemTotal:") f >> total;
-        else if (key == "MemAvailable:") { f >> avail; break; }
-        else f.ignore(numeric_limits<streamsize>::max(), '\n');
+    string key;
+    long total = 0, avail = 0;
+    while (f >> key)
+    {
+        if (key == "MemTotal:")
+            f >> total;
+        else if (key == "MemAvailable:")
+        {
+            f >> avail;
+            break;
+        }
+        else
+            f.ignore(numeric_limits<streamsize>::max(), '\n');
     }
     return total ? (100.0 * (total - avail) / total) : 0.0;
 }
 
-void get_disk(const char *path, double &disk, double &inode) {
+void get_disk(const char *path, double &disk, double &inode)
+{
     struct statvfs st;
-    if (statvfs(path, &st) != 0) { disk = inode = -1; return; }
-    disk  = 100.0 * (1.0 - (double)st.f_bavail / st.f_blocks);
+    if (statvfs(path, &st) != 0)
+    {
+        disk = inode = -1;
+        return;
+    }
+    disk = 100.0 * (1.0 - (double)st.f_bavail / st.f_blocks);
     inode = 100.0 * (1.0 - (double)st.f_favail / st.f_files);
 }
 
 // =======================================================
-// Send POST request (HTTP or HTTPS) — fire & forget
+// Fire-and-forget POST (HTTP or HTTPS)
 // =======================================================
-void send_post_async(const Endpoint &ep, const string &json) {
-    thread([=]() {
+void send_post_async(const Endpoint &ep, const string &json, const string &apiKey)
+{
+    thread([=]()
+           {
         string req =
             "POST " + ep.path + " HTTP/1.1\r\n"
             "Host: " + ep.host + "\r\n"
             "User-Agent: StatsLogger/1.0\r\n"
+            "X-API-Key: " + apiKey + "\r\n"
+            "Accept: */*\r\n"
+            "Accept-Encoding: identity\r\n"
             "Content-Type: application/json\r\n"
             "Content-Length: " + to_string(json.size()) + "\r\n"
             "Connection: close\r\n\r\n" +
             json;
 
-        // ---------- Plain HTTP ----------
+        // ----------- HTTP -----------
         if (!ep.isHttps) {
             int sock = socket(AF_INET, SOCK_STREAM, 0);
             if (sock < 0) { perror("socket"); return; }
@@ -112,7 +138,7 @@ void send_post_async(const Endpoint &ep, const string &json) {
             return;
         }
 
-        // ---------- HTTPS via mbedTLS ----------
+        // ----------- HTTPS (mbedTLS) -----------
         mbedtls_net_context net;
         mbedtls_ssl_context ssl;
         mbedtls_ssl_config conf;
@@ -151,7 +177,7 @@ void send_post_async(const Endpoint &ep, const string &json) {
             goto cleanup;
         }
 
-        // Cloudflare-compatible TLS 1.3
+        // Cloudflare-compatible TLS
         mbedtls_ssl_conf_min_version(&conf, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3);
         mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
         mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
@@ -188,37 +214,47 @@ void send_post_async(const Endpoint &ep, const string &json) {
         mbedtls_ssl_free(&ssl);
         mbedtls_ssl_config_free(&conf);
         mbedtls_ctr_drbg_free(&ctr_drbg);
-        mbedtls_entropy_free(&entropy);
-    }).detach();
+        mbedtls_entropy_free(&entropy); })
+        .detach();
 }
 
 // =======================================================
-// Main
+// MAIN
 // =======================================================
-int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        cerr << "Usage: " << argv[0] << " http[s]://host[:port]/path\n";
+int main(int argc, char *argv[])
+{
+    if (argc < 4)
+    {
+        cerr << "Usage: " << argv[0] << " <endpoint> <server_name> <api_key>\n";
+        cerr << "Example: ./stats_logger http://127.0.0.1:3000/system-stats vds5223 mysecretkey\n";
         return 1;
     }
 
     Endpoint ep = parseUrl(argv[1]);
-    if (!ep.valid) return 1;
+    if (!ep.valid)
+        return 1;
+
+    string serverName = argv[2];
+    string apiKey = argv[3];
 
     cout << "Sending stats to " << ep.scheme << "://" << ep.host
-         << ":" << ep.port << ep.path << endl;
+         << ":" << ep.port << ep.path << " as " << serverName << endl;
 
-    while (true) {
+    while (true)
+    {
         double cpu = get_cpu_usage();
         double ram = get_ram_usage();
         double disk, inode;
         get_disk("/", disk, inode);
 
-        string json = "{\"cpu\":" + to_string(cpu) +
+        string json = "{\"server\":\"" + serverName + "\","
+                                                      "\"cpu\":" +
+                      to_string(cpu) +
                       ",\"ram\":" + to_string(ram) +
                       ",\"disk\":" + to_string(disk) +
                       ",\"inode\":" + to_string(inode) + "}";
 
-        send_post_async(ep, json);
+        send_post_async(ep, json, apiKey);
         this_thread::sleep_for(chrono::seconds(5));
     }
 }

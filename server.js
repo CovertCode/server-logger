@@ -4,23 +4,19 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
-// Load .env file
 dotenv.config();
 
-// Setup paths
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Setup Express
 const app = express();
 app.use(express.json());
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// Create or open SQLite database
 const db = new Database(path.join(__dirname, 'stats.db'));
 
-// Initialize table
+// Initialize table if not exists
 db.prepare(`
   CREATE TABLE IF NOT EXISTS stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +28,6 @@ db.prepare(`
   )
 `).run();
 
-// Prepare statements
 const insertStat = db.prepare(`
   INSERT INTO stats (timestamp, cpu, ram, disk, inode)
   VALUES (?, ?, ?, ?, ?)
@@ -48,9 +43,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ===== Routes =====
-
-// Receive stats from logger
+// ===== API Endpoint =====
 app.post('/system-stats', (req, res) => {
   const { cpu, ram, disk, inode } = req.body;
   const now = Math.floor(Date.now() / 1000);
@@ -59,7 +52,7 @@ app.post('/system-stats', (req, res) => {
 
   try {
     insertStat.run(now, cpu, ram, disk, inode);
-    deleteOld.run(now - 3600 * 24); // keep only 24h
+    deleteOld.run(now - 3600 * 24);
     console.log('✅ Data written to SQLite:', { cpu, ram, disk, inode });
     res.sendStatus(204);
   } catch (err) {
@@ -68,21 +61,41 @@ app.post('/system-stats', (req, res) => {
   }
 });
 
-// View data from the last hour
+// ===== View Route =====
 app.get('/', (req, res) => {
-  const oneHourAgo = Math.floor(Date.now() / 1000) - 3600;
+  // Get recent entries (latest first)
   const rows = db.prepare(`
     SELECT timestamp, cpu, ram, disk, inode
     FROM stats
-    WHERE timestamp > ?
-    ORDER BY timestamp ASC
-  `).all(oneHourAgo);
+    ORDER BY timestamp DESC
+    LIMIT 200
+  `).all();
 
-  res.render('index', { rows });
+  // Compute averages of last 20 entries
+  const recent20 = rows.slice(0, 20);
+  const avg = {
+    cpu: 0,
+    ram: 0,
+    disk: 0,
+    inode: 0,
+  };
+  if (recent20.length > 0) {
+    for (const r of recent20) {
+      avg.cpu += r.cpu;
+      avg.ram += r.ram;
+      avg.disk += r.disk;
+      avg.inode += r.inode;
+    }
+    avg.cpu /= recent20.length;
+    avg.ram /= recent20.length;
+    avg.disk /= recent20.length;
+    avg.inode /= recent20.length;
+  }
+
+  res.render('index', { rows, avg });
 });
 
-// ===== Start server =====
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🟢 Stats server running on http://localhost:${PORT}`);
-});
+app.listen(PORT, () =>
+  console.log(`🟢 Stats server running on http://localhost:${PORT}`)
+);

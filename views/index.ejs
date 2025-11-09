@@ -2,63 +2,128 @@
 <html>
 
 <head>
-    <meta charset="utf-8">
-    <title>System Stats (Last 1 Hour)</title>
-    <style>
-        body {
-            font-family: monospace;
-            padding: 20px;
-            background: #fafafa;
-        }
+  <meta charset="utf-8">
+  <title>System Stats Dashboard</title>
+  <style>
+    body {
+      font-family: monospace;
+      background: #f9fafb;
+      margin: 0;
+      padding: 0;
+    }
 
-        table {
-            border-collapse: collapse;
-            width: 100%;
-        }
+    .topbar {
+      background: #1e293b;
+      color: #fff;
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
 
-        th,
-        td {
-            border: 1px solid #ccc;
-            padding: 4px 8px;
-            text-align: right;
-        }
+    .avg span {
+      margin-left: 10px;
+    }
 
-        th {
-            background: #eee;
-        }
-    </style>
+    .container {
+      padding: 20px;
+    }
+
+    select {
+      font-size: 14px;
+      padding: 4px;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    th,
+    td {
+      border: 1px solid #ccc;
+      padding: 6px 8px;
+      text-align: right;
+    }
+
+    th {
+      background: #eee;
+    }
+
+    .good {
+      color: #16a34a;
+    }
+
+    .warn {
+      color: #facc15;
+    }
+
+    .bad {
+      color: #dc2626;
+    }
+  </style>
 </head>
 
 <body>
-    <h3>System Stats (Last 1 Hour)</h3>
-    <table>
-        <tr>
-            <th>Time</th>
-            <th>CPU %</th>
-            <th>RAM %</th>
-            <th>Disk %</th>
-            <th>Inode %</th>
-        </tr>
-        <% rows.forEach(r=> { %>
-            <tr>
-                <td>
-                    <%= new Date(r.timestamp * 1000).toLocaleTimeString() %>
-                </td>
-                <td>
-                    <%= r.cpu.toFixed(1) %>
-                </td>
-                <td>
-                    <%= r.ram.toFixed(1) %>
-                </td>
-                <td>
-                    <%= r.disk.toFixed(1) %>
-                </td>
-                <td>
-                    <%= r.inode.toFixed(1) %>
-                </td>
-            </tr>
+  <div class="topbar">
+    <div>
+      <b>System Stats</b> —
+      <form method="get" style="display:inline">
+        <select name="server" onchange="this.form.submit()">
+          <option value="">All Servers</option>
+          <% servers.forEach(s=> { %>
+            <option value="<%= s.server %>" <%=currentServer===s.server?'selected':'' %>>
+              <%= s.server %>
+            </option>
             <% }) %>
+        </select>
+      </form>
+    </div>
+    <div class="avg">
+      <span>CPU: <%= avg.cpu.toFixed(1) %>%</span>
+      <span>RAM: <%= avg.ram.toFixed(1) %>%</span>
+      <span>Disk: <%= avg.disk.toFixed(1) %>%</span>
+      <span>Inode: <%= avg.inode.toFixed(1) %>%</span>
+    </div>
+  </div>
+
+  <div class="container">
+    <h3>Recent Entries (Newest on Top)</h3>
+    <table>
+      <tr>
+        <th>Time</th>
+        <th>Server</th>
+        <th>CPU %</th>
+        <th>RAM %</th>
+        <th>Disk %</th>
+        <th>Inode %</th>
+      </tr>
+      <% rows.forEach(r=> {
+        const cls = v => v>80?'bad':v>60?'warn':'good'; %>
+        <tr>
+          <td>
+            <%= new Date(r.timestamp * 1000).toLocaleTimeString() %>
+          </td>
+          <td>
+            <%= r.server %>
+          </td>
+          <td class="<%= cls(r.cpu) %>">
+            <%= r.cpu.toFixed(1) %>
+          </td>
+          <td class="<%= cls(r.ram) %>">
+            <%= r.ram.toFixed(1) %>
+          </td>
+          <td class="<%= cls(r.disk) %>">
+            <%= r.disk.toFixed(1) %>
+          </td>
+          <td class="<%= cls(r.inode) %>">
+            <%= r.inode.toFixed(1) %>
+          </td>
+        </tr>
+        <% }) %>
     </table>
+  </div>
 </body>
 
 </html>
