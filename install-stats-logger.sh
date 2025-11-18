@@ -4,7 +4,7 @@ set -e
 # -----------------------------
 # Configuration
 # -----------------------------
-GITHUB_URL="https://cdn.statically.io/gh/CovertCode/server-logger/main/stats_logger"
+BINARY_URL="https://cdn.statically.io/gh/CovertCode/server-logger/main/stats_logger"
 SERVICE_NAME="stats_logger"
 INSTALL_PATH="/usr/local/bin/$SERVICE_NAME"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -26,50 +26,45 @@ ENDPOINT="$3"
 
 if [[ -z "$SERVER_NAME" || -z "$API_KEY" ]]; then
   echo "Usage: $0 <server_name> <api_key> [endpoint]"
-  echo "Example:"
-  echo "  bash <(wget -qO- https://cdn.statically.io/gh/CovertCode/server-logger/main/install-stats-logger.sh) us6 Aspirate9-Decoy-Getaway-Net"
   exit 1
 fi
 
 ENDPOINT=${ENDPOINT:-$DEFAULT_ENDPOINT}
 
 # -----------------------------
-# Install dependencies
+# Install tools (wget, curl)
 # -----------------------------
-info "Updating apt and installing dependencies..."
+info "Installing dependencies..."
 sudo apt update -y
-sudo apt install -y wget curl libmbedtls-dev || error_exit "Failed to install dependencies"
-success "Dependencies installed (wget, curl, libmbedtls-dev)"
+sudo apt install -y wget curl >/dev/null 2>&1 || true
+success "Dependencies installed."
 
 # -----------------------------
-# Download binary
+# Download universal static binary
 # -----------------------------
-info "Downloading latest stats_logger binary..."
-sudo wget -q -O "$INSTALL_PATH" "$GITHUB_URL" || error_exit "Failed to download binary"
+info "Downloading stats_logger binary..."
+sudo wget -q -O "$INSTALL_PATH" "$BINARY_URL" || error_exit "Failed to download binary."
 sudo chmod +x "$INSTALL_PATH"
-success "Installed binary to $INSTALL_PATH"
+success "Binary installed at $INSTALL_PATH"
 
 # -----------------------------
 # Increase inotify limits safely
 # -----------------------------
-info "Adjusting inotify system limits..."
-if ! grep -q "fs.inotify.max_user_watches" /etc/sysctl.conf; then
-  echo "fs.inotify.max_user_watches=524288" | sudo tee -a /etc/sysctl.conf >/dev/null
-else
-  sudo sed -i 's/^fs\.inotify\.max_user_watches=.*/fs.inotify.max_user_watches=524288/' /etc/sysctl.conf
-fi
+info "Applying inotify limit fixes..."
 
-if ! grep -q "fs.inotify.max_user_instances" /etc/sysctl.conf; then
-  echo "fs.inotify.max_user_instances=1024" | sudo tee -a /etc/sysctl.conf >/dev/null
-else
-  sudo sed -i 's/^fs\.inotify\.max_user_instances=.*/fs.inotify.max_user_instances=1024/' /etc/sysctl.conf
-fi
+grep -q "fs.inotify.max_user_watches" /etc/sysctl.conf \
+  && sudo sed -i 's/^fs\.inotify\.max_user_watches=.*/fs.inotify.max_user_watches=524288/' /etc/sysctl.conf \
+  || echo "fs.inotify.max_user_watches=524288" | sudo tee -a /etc/sysctl.conf >/dev/null
+
+grep -q "fs.inotify.max_user_instances" /etc/sysctl.conf \
+  && sudo sed -i 's/^fs\.inotify\.max_user_instances=.*/fs.inotify.max_user_instances=1024/' /etc/sysctl.conf \
+  || echo "fs.inotify.max_user_instances=1024" | sudo tee -a /etc/sysctl.conf >/dev/null
 
 sudo sysctl -p >/dev/null
-success "Inotify limits updated and applied."
+success "Inotify limits applied."
 
 # -----------------------------
-# Create systemd service file
+# Create systemd service
 # -----------------------------
 info "Creating systemd service..."
 sudo tee "$SERVICE_FILE" >/dev/null <<EOF
@@ -91,31 +86,32 @@ StandardError=null
 [Install]
 WantedBy=multi-user.target
 EOF
-success "Service file created at $SERVICE_FILE"
+
+success "Service file created."
 
 # -----------------------------
 # Enable + Start service
 # -----------------------------
-info "Enabling and starting service..."
+info "Starting systemd service..."
 sudo systemctl daemon-reload
 sudo systemctl enable "$SERVICE_NAME"
 sudo systemctl restart "$SERVICE_NAME"
 
 # -----------------------------
-# Verify status
+# Verify service
 # -----------------------------
-sleep 2
+sleep 1
 if systemctl is-active --quiet "$SERVICE_NAME"; then
-  success "Service is running successfully!"
+  success "Service is running."
 else
-  error_exit "Service failed to start. Check: sudo journalctl -u $SERVICE_NAME -xe"
+  error_exit "Service failed. Check with: sudo journalctl -u $SERVICE_NAME -xe"
 fi
 
 info "Final status:"
-sudo systemctl status "$SERVICE_NAME" --no-pager | grep -E "Active|ExecStart" || true
+sudo systemctl status "$SERVICE_NAME" --no-pager | grep -E "Active|ExecStart"
+
 echo ""
-success "✅ Installation complete!"
-echo "Stats logger is running and sending data to:"
-echo "   ${ENDPOINT}"
-echo "Server Name: ${SERVER_NAME}"
+success "🎉 Installation complete! Stats logger is now running."
+echo "→ Endpoint: $ENDPOINT"
+echo "→ Server:   $SERVER_NAME"
 echo ""
