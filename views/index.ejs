@@ -1,129 +1,454 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
-  <meta charset="utf-8">
-  <title>System Stats Dashboard</title>
+  <title>NET_RUNNER // SYS_MONITOR</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Tech Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
   <style>
-    body {
-      font-family: monospace;
-      background: #f9fafb;
-      margin: 0;
-      padding: 0;
+    :root {
+      --bg-color: #050505;
+      --panel-bg: rgba(10, 20, 30, 0.75);
+      --cyan: #00f3ff;
+      --cyan-dim: rgba(0, 243, 255, 0.15);
+      --green: #00ff41;
+      --yellow: #fcee0a;
+      --red: #ff003c;
     }
 
+    body {
+      background-color: var(--bg-color);
+      /* Grid Background Pattern */
+      background-image: 
+        linear-gradient(rgba(0, 40, 40, 0.2) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 40, 40, 0.2) 1px, transparent 1px);
+      background-size: 30px 30px;
+      color: var(--cyan);
+      font-family: 'Share Tech Mono', monospace;
+      margin: 0;
+      padding: 20px;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* CRT Scanline Effect */
+    body::after {
+      content: " ";
+      display: block;
+      position: fixed;
+      top: 0; left: 0; bottom: 0; right: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+      z-index: 999;
+      background-size: 100% 2px, 3px 100%;
+      pointer-events: none;
+    }
+
+    /* --- TOP BAR --- */
     .topbar {
-      background: #1e293b;
-      color: #fff;
-      padding: 10px 20px;
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
+      border-bottom: 2px solid var(--cyan);
+      padding-bottom: 15px;
+      margin-bottom: 30px;
+      text-shadow: 0 0 8px var(--cyan);
+      gap: 15px;
     }
 
-    .avg span {
-      margin-left: 10px;
+    h2 {
+      margin: 0;
+      font-size: 1.6rem;
+      letter-spacing: 2px;
+    }
+    h2::before { content: "[ "; color: var(--green); }
+    h2::after { content: " ]"; color: var(--green); }
+
+    form { display: flex; align-items: center; gap: 15px; }
+
+    /* Inputs & Buttons */
+    select, button, .btn-style {
+      background: #000;
+      color: var(--cyan);
+      border: 1px solid var(--cyan);
+      padding: 8px 16px;
+      font-family: 'Share Tech Mono', monospace;
+      text-transform: uppercase;
+      font-size: 1rem;
+      cursor: pointer;
+      box-shadow: 0 0 5px var(--cyan-dim);
+      transition: all 0.2s;
     }
 
-    .container {
+    select:hover, button:hover {
+      background: var(--cyan-dim);
+      box-shadow: 0 0 15px var(--cyan);
+      text-shadow: 0 0 5px #fff;
+    }
+
+    label {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+    }
+
+    input[type="checkbox"] {
+      appearance: none;
+      width: 14px; height: 14px;
+      border: 1px solid var(--cyan);
+      display: grid; place-content: center;
+    }
+    input[type="checkbox"]::before {
+      content: ""; width: 8px; height: 8px;
+      background: var(--cyan);
+      transform: scale(0); transition: 0.1s;
+      box-shadow: 0 0 8px var(--cyan);
+    }
+    input[type="checkbox"]:checked::before { transform: scale(1); }
+
+    /* --- MODAL (CONFIG) --- */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      display: none; justify-content: center; align-items: center;
+    }
+    .modal-overlay.active { display: flex; }
+
+    .modal-content {
+      background: #090a0c;
+      border: 1px solid var(--cyan);
+      box-shadow: 0 0 40px var(--cyan-dim);
+      width: 90%; max-width: 600px;
+      padding: 25px;
+      /* Sci-Fi Cut Corners */
+      clip-path: polygon(
+        20px 0, 100% 0, 100% calc(100% - 20px), 
+        calc(100% - 20px) 100%, 0 100%, 0 20px
+      );
+    }
+
+    .modal-header {
+      font-size: 1.2rem;
+      border-bottom: 1px dashed var(--cyan);
+      padding-bottom: 10px;
+      margin-bottom: 15px;
+      display: flex; justify-content: space-between;
+    }
+    .close-btn { color: var(--red); cursor: pointer; font-weight: bold; }
+
+    .config-list {
+      max-height: 400px;
+      overflow-y: auto;
+      display: flex; flex-direction: column; gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .config-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 12px;
+      border: 1px solid #333;
+      background: rgba(0,243,255,0.02);
+    }
+    .config-item:hover { border-color: var(--cyan); background: rgba(0,243,255,0.05); }
+
+    .btn-purge {
+      border-color: var(--red); color: var(--red); font-size: 0.8rem; padding: 4px 10px;
+    }
+    .btn-purge:hover { background: rgba(255,0,60,0.2); box-shadow: 0 0 15px var(--red); }
+
+    /* --- SERVER GRID --- */
+    .server-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 25px;
+    }
+
+    .server-card {
+      position: relative;
+      background: var(--panel-bg);
       padding: 20px;
+      border: 1px solid var(--cyan);
+      /* HUD Shape */
+      clip-path: polygon(
+        0 0, 100% 0, 
+        100% calc(100% - 15px), calc(100% - 15px) 100%, 
+        0 100%
+      );
+      transition: transform 0.2s;
+    }
+    .server-card:hover { transform: translateY(-2px); }
+
+    /* Decorative Corner */
+    .server-card::before {
+      content: ""; position: absolute; bottom: 0; right: 0;
+      width: 15px; height: 15px;
+      border-left: 2px solid var(--cyan);
+      border-top: 2px solid var(--cyan);
+      transform: rotate(45deg) translate(4px, 10px);
     }
 
-    select {
-      font-size: 14px;
-      padding: 4px;
+    .server-card h3 {
+      margin: 0 0 15px 0;
+      font-size: 1.2rem;
+      border-bottom: 1px dashed rgba(0,243,255,0.3);
+      padding-bottom: 8px;
     }
 
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      margin-top: 10px;
+    .stat-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 1.1rem; }
+    .stat-val { font-weight: bold; text-shadow: 0 0 5px currentColor; }
+    
+    small { display: block; margin-top: 15px; font-size: 0.75rem; text-align: right; opacity: 0.7; }
+
+    /* --- HEALTH COLORS --- */
+    .ok { border-color: var(--cyan); color: var(--cyan); }
+    
+    .warning {
+      border-color: var(--yellow); color: var(--yellow);
+      box-shadow: inset 0 0 15px rgba(252, 238, 10, 0.1);
+    }
+    .warning h3 { border-bottom-color: rgba(252, 238, 10, 0.3); }
+
+    .critical {
+      border-color: var(--red); color: var(--red);
+      box-shadow: inset 0 0 25px rgba(255, 0, 60, 0.2);
+      animation: pulse-red 1.5s infinite alternate;
+    }
+    .critical h3 { border-bottom-color: rgba(255, 0, 60, 0.3); }
+
+    @keyframes pulse-red {
+      from { box-shadow: inset 0 0 10px rgba(255, 0, 60, 0.1); }
+      to { box-shadow: inset 0 0 30px rgba(255, 0, 60, 0.4); }
     }
 
-    th,
-    td {
-      border: 1px solid #ccc;
-      padding: 6px 8px;
-      text-align: right;
+    /* --- TABLE (SINGLE VIEW) --- */
+    .table-container {
+      max-width: 800px; margin: 0 auto;
+      border: 1px solid var(--cyan);
+      background: rgba(0,0,0,0.8);
+      box-shadow: 0 0 20px var(--cyan-dim);
     }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 12px; background: rgba(0, 243, 255, 0.1); color: #fff; }
+    td { padding: 10px 12px; border-bottom: 1px solid rgba(0, 243, 255, 0.1); }
+    
+    .row-ok { color: var(--cyan); }
+    .row-warning { color: var(--yellow); }
+    .row-critical { color: var(--red); text-shadow: 0 0 5px var(--red); }
 
-    th {
-      background: #eee;
-    }
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #000; }
+    ::-webkit-scrollbar-thumb { background: #333; border: 1px solid var(--cyan); }
 
-    .good {
-      color: #16a34a;
-    }
-
-    .warn {
-      color: #facc15;
-    }
-
-    .bad {
-      color: #dc2626;
-    }
   </style>
 </head>
 
 <body>
+
   <div class="topbar">
-    <div>
-      <b>System Stats</b> —
-      <form method="get" style="display:inline">
-        <select name="server" onchange="this.form.submit()">
-          <option value="">All Servers</option>
-          <% servers.forEach(s=> { %>
-            <option value="<%= s.server %>" <%=currentServer===s.server?'selected':'' %>>
-              <%= s.server %>
-            </option>
-            <% }) %>
-        </select>
-      </form>
-    </div>
-    <div class="avg">
-      <span>CPU: <%= avg.cpu.toFixed(1) %>%</span>
-      <span>RAM: <%= avg.ram.toFixed(1) %>%</span>
-      <span>Disk: <%= avg.disk.toFixed(1) %>%</span>
-      <span>Inode: <%= avg.inode.toFixed(1) %>%</span>
-    </div>
-  </div>
+    <h2>SYSTEM_OVERWATCH</h2>
 
-  <div class="container">
-    <h3>Recent Entries (Newest on Top)</h3>
-    <table>
-      <tr>
-        <th>Time</th>
-        <th>Server</th>
-        <th>CPU %</th>
-        <th>RAM %</th>
-        <th>Disk %</th>
-        <th>Inode %</th>
-      </tr>
-      <% rows.forEach(r=> {
-        const cls = v => v>80?'bad':v>60?'warn':'good'; %>
-        <tr>
-          <td>
-            <%= new Date(r.timestamp * 1000).toLocaleTimeString() %>
-          </td>
-          <td>
-            <%= r.server %>
-          </td>
-          <td class="<%= cls(r.cpu) %>">
-            <%= r.cpu.toFixed(1) %>
-          </td>
-          <td class="<%= cls(r.ram) %>">
-            <%= r.ram.toFixed(1) %>
-          </td>
-          <td class="<%= cls(r.disk) %>">
-            <%= r.disk.toFixed(1) %>
-          </td>
-          <td class="<%= cls(r.inode) %>">
-            <%= r.inode.toFixed(1) %>
-          </td>
-        </tr>
+    <form onsubmit="return false;">
+      <button class="btn-style" onclick="openModal()">⚙ NODES</button>
+      
+      <select id="serverSelect" onchange="fetchData()">
+        <option value="">// VIEW_ALL</option>
+        <% servers.forEach(s => { %>
+          <option value="<%= s %>"><%= s %></option>
         <% }) %>
-    </table>
-  </div>
-</body>
+      </select>
 
+      <label>
+        <input type="checkbox" id="autoRefresh" checked> LIVE_FEED
+      </label>
+    </form>
+  </div>
+
+  <div id="content"></div>
+
+  <!-- CONFIG MODAL -->
+  <div class="modal-overlay" id="configModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>// NODE_CONFIGURATION</span>
+        <span class="close-btn" onclick="closeModal()">[X]</span>
+      </div>
+      
+      <div id="configList" class="config-list">
+        <!-- JS Injects Rows Here -->
+      </div>
+
+      <div style="text-align: right;">
+        <button class="btn-style" onclick="closeModal()">EXIT_CONFIG</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Data from Backend
+    const allServers = <%- JSON.stringify(servers) %>;
+
+    // Elements
+    const content = document.getElementById("content");
+    const serverSelect = document.getElementById("serverSelect");
+    const autoRefresh = document.getElementById("autoRefresh");
+    const modal = document.getElementById("configModal");
+    const configList = document.getElementById("configList");
+
+    // State: Hidden servers stored in LocalStorage
+    let hiddenNodes = new Set(JSON.parse(localStorage.getItem('hidden_nodes') || '[]'));
+
+    // --- MODAL LOGIC ---
+    function openModal() {
+      renderConfig();
+      modal.classList.add("active");
+    }
+
+    function closeModal() {
+      modal.classList.remove("active");
+      fetchData(); // Refresh view upon closing
+    }
+
+    function renderConfig() {
+      if (allServers.length === 0) {
+        configList.innerHTML = "<div style='text-align:center; padding:20px; color:#555;'>NO_DATA_FOUND</div>";
+        return;
+      }
+
+      configList.innerHTML = allServers.map(s => {
+        const isVisible = !hiddenNodes.has(s);
+        return `
+          <div class="config-item">
+            <label>
+              <input type="checkbox" onchange="toggleHidden('${s}')" ${isVisible ? "checked" : ""}>
+              <span>${s}</span>
+            </label>
+            <button class="btn-style btn-purge" onclick="purgeServer('${s}')">PURGE_DATA</button>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function toggleHidden(server) {
+      if (hiddenNodes.has(server)) hiddenNodes.delete(server);
+      else hiddenNodes.add(server);
+      localStorage.setItem('hidden_nodes', JSON.stringify([...hiddenNodes]));
+    }
+
+    async function purgeServer(server) {
+      if (!confirm(`WARNING: This will permanently delete ALL logs for '${server}' from the database.\n\nContinue?`)) return;
+
+      try {
+        const res = await fetch('/delete-server', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ server })
+        });
+        if (res.ok) {
+          alert("Server Purged.");
+          location.reload(); // Reload to update server list from DB
+        } else {
+          alert("Error deleting server.");
+        }
+      } catch (e) {
+        console.error(e);
+        alert("Connection Failed");
+      }
+    }
+
+    // --- DASHBOARD LOGIC ---
+    async function fetchData() {
+      // Don't refresh if modal is open
+      if (modal.classList.contains("active")) return;
+
+      const selected = serverSelect.value;
+      const url = "/live-data" + (selected ? `?server=${selected}` : "");
+      
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        render(data);
+      } catch (e) {
+        console.log("Offline...");
+      }
+    }
+
+    function getHealth(cpu, ram, disk) {
+      if (cpu > 90 || ram > 95 || disk > 90) return "critical";
+      if (cpu > 70 || ram > 80 || disk > 80) return "warning";
+      return "ok";
+    }
+
+    function render(data) {
+      // 1. GRID VIEW (All Servers)
+      if (data.mode === "all") {
+        const visible = data.rows.filter(r => !hiddenNodes.has(r.server));
+
+        if (visible.length === 0) {
+          content.innerHTML = `<div style="text-align:center; margin-top:50px; opacity:0.5;">// NO_SIGNAL_DETECTED<br>[Check Config or Add Nodes]</div>`;
+          return;
+        }
+
+        content.innerHTML = `<div class="server-grid">` + 
+          visible.map(s => {
+            const h = getHealth(s.cpu, s.ram, s.disk);
+            return `
+              <div class="server-card ${h}">
+                <h3>>> ${s.server}</h3>
+                <div class="stat-row"><span>CPU_LOAD</span><span class="stat-val">${s.cpu.toFixed(1)}%</span></div>
+                <div class="stat-row"><span>MEM_USE</span><span class="stat-val">${s.ram.toFixed(1)}%</span></div>
+                <div class="stat-row"><span>DSK_VOL</span><span class="stat-val">${s.disk.toFixed(1)}%</span></div>
+                <div class="stat-row"><span>I-NODES</span><span class="stat-val">${s.inode.toFixed(1)}%</span></div>
+                <small>LAST_PACKET: ${new Date(s.timestamp).toLocaleTimeString()}</small>
+              </div>
+            `;
+          }).join("") + 
+        `</div>`;
+        return;
+      }
+
+      // 2. TABLE VIEW (Single Server History)
+      content.innerHTML = `
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr><th>TIME</th><th>CPU</th><th>RAM</th><th>DISK</th><th>INODES</th></tr>
+            </thead>
+            <tbody>
+              ${data.rows.map(r => {
+                const h = getHealth(r.cpu, r.ram, r.disk);
+                return `
+                  <tr class="row-${h}">
+                    <td>${new Date(r.timestamp).toLocaleTimeString()}</td>
+                    <td>${r.cpu.toFixed(1)}%</td>
+                    <td>${r.ram.toFixed(1)}%</td>
+                    <td>${r.disk.toFixed(1)}%</td>
+                    <td>${r.inode.toFixed(1)}%</td>
+                  </tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    // Auto Refresh Loop
+    setInterval(() => {
+      if (autoRefresh.checked) fetchData();
+    }, 3000);
+
+    // Initial Load
+    fetchData();
+
+  </script>
+</body>
 </html>
