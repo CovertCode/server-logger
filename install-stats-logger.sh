@@ -4,7 +4,7 @@ set -e
 # -----------------------------
 # Configuration
 # -----------------------------
-BINARY_URL="https://cdn.statically.io/gh/CovertCode/server-logger/main/stats_logger"
+BINARY_URL="https://github.com/CovertCode/server-logger/raw/refs/heads/main/stats_logger"
 SERVICE_NAME="stats_logger"
 INSTALL_PATH="/usr/local/bin/$SERVICE_NAME"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
