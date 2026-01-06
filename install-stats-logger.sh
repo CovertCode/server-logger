@@ -40,6 +40,33 @@ sudo apt install -y wget curl >/dev/null 2>&1 || true
 success "Dependencies installed."
 
 # -----------------------------
+# Cleanup existing installation
+# -----------------------------
+info "Checking for previous versions..."
+
+# Stop and disable the service if it exists
+if systemctl list-units --full -all | grep -Fq "$SERVICE_NAME.service"; then
+    info "Stopping existing service..."
+    sudo systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+    sudo systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+fi
+
+# Remove the service file
+if [ -f "$SERVICE_FILE" ]; then
+    info "Removing existing service file..."
+    sudo rm -f "$SERVICE_FILE"
+    sudo systemctl daemon-reload
+fi
+
+# Remove the binary
+if [ -f "$INSTALL_PATH" ]; then
+    info "Removing existing binary..."
+    sudo rm -f "$INSTALL_PATH"
+fi
+
+success "Clean slate prepared."
+
+# -----------------------------
 # Download universal static binary
 # -----------------------------
 info "Downloading stats_logger binary..."
