@@ -8,6 +8,9 @@
 #include <unistd.h>
 #include <cstring>
 #include <regex>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
 
 // ---- mbedTLS ----
 #include <mbedtls/net_sockets.h>
@@ -15,11 +18,12 @@
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/error.h>
+#include <mbedtls/debug.h>
 
 using namespace std;
 
 // =======================================================
-// Struct for parsed endpoint
+// Data Structures
 // =======================================================
 struct Endpoint
 {
@@ -29,8 +33,13 @@ struct Endpoint
     bool valid = false;
 };
 
+// Queue for the background thread
+queue<string> payloadQueue;
+mutex queueMutex;
+condition_variable queueCv;
+
 // =======================================================
-// Parse URL
+// Helpers
 // =======================================================
 Endpoint parseUrl(const string &url)
 {
@@ -51,9 +60,6 @@ Endpoint parseUrl(const string &url)
     return ep;
 }
 
-// =======================================================
-// Collect system metrics
-// =======================================================
 double get_cpu_usage()
 {
     static long prev_idle = 0, prev_total = 0;
@@ -103,119 +109,118 @@ void get_disk(const char *path, double &disk, double &inode)
 }
 
 // =======================================================
-// Fire-and-forget POST (HTTP or HTTPS)
+// Network Logic (Blocking, Safe)
 // =======================================================
-void send_post_async(const Endpoint &ep, const string &json, const string &apiKey)
+void perform_request(const Endpoint &ep, const string &json, const string &apiKey)
 {
-    thread([=]()
-           {
-        string req =
-            "POST " + ep.path + " HTTP/1.1\r\n"
-            "Host: " + ep.host + "\r\n"
-            "User-Agent: StatsLogger/1.0\r\n"
-            "X-API-Key: " + apiKey + "\r\n"
-            "Accept: */*\r\n"
-            "Accept-Encoding: identity\r\n"
-            "Content-Type: application/json\r\n"
-            "Content-Length: " + to_string(json.size()) + "\r\n"
-            "Connection: close\r\n\r\n" +
-            json;
+    string req =
+        "POST " + ep.path + " HTTP/1.1\r\n"
+                            "Host: " +
+        ep.host + "\r\n"
+                  "User-Agent: StatsLogger/1.1\r\n"
+                  "X-API-Key: " +
+        apiKey + "\r\n"
+                 "Content-Type: application/json\r\n"
+                 "Content-Length: " +
+        to_string(json.size()) + "\r\n"
+                                 "Connection: close\r\n\r\n" +
+        json;
 
-        // ----------- HTTP -----------
-        if (!ep.isHttps) {
-            int sock = socket(AF_INET, SOCK_STREAM, 0);
-            if (sock < 0) { perror("socket"); return; }
-            hostent *server = gethostbyname(ep.host.c_str());
-            if (!server) { cerr << "DNS failed\n"; close(sock); return; }
+    // --- HTTP ---
+    if (!ep.isHttps)
+    {
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0)
+            return;
+
+        // Add timeout
+        struct timeval timeout;
+        timeout.tv_sec = 5;
+        timeout.tv_usec = 0;
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout);
+
+        hostent *server = gethostbyname(ep.host.c_str());
+        if (server)
+        {
             sockaddr_in addr{};
             addr.sin_family = AF_INET;
             addr.sin_port = htons(ep.port);
             memcpy(&addr.sin_addr.s_addr, server->h_addr, server->h_length);
-            if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0)
+            if (connect(sock, (sockaddr *)&addr, sizeof(addr)) == 0)
+            {
                 send(sock, req.c_str(), req.size(), 0);
-            else perror("connect");
-            close(sock);
-            return;
+            }
         }
+        close(sock);
+        return;
+    }
 
-        // ----------- HTTPS (mbedTLS) -----------
-        mbedtls_net_context net;
-        mbedtls_ssl_context ssl;
-        mbedtls_ssl_config conf;
-        mbedtls_ctr_drbg_context ctr_drbg;
-        mbedtls_entropy_context entropy;
-        char errbuf[128];
-        int ret;
+    // --- HTTPS (mbedTLS) ---
+    mbedtls_net_context net;
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config conf;
+    mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_entropy_context entropy;
 
-        mbedtls_net_init(&net);
-        mbedtls_ssl_init(&ssl);
-        mbedtls_ssl_config_init(&conf);
-        mbedtls_ctr_drbg_init(&ctr_drbg);
-        mbedtls_entropy_init(&entropy);
+    mbedtls_net_init(&net);
+    mbedtls_ssl_init(&ssl);
+    mbedtls_ssl_config_init(&conf);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+    mbedtls_entropy_init(&entropy);
 
-        const char *pers = "stats_logger";
-        if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                                         (const unsigned char *)pers, strlen(pers))) != 0) {
-            mbedtls_strerror(ret, errbuf, sizeof(errbuf));
-            cerr << "[TLS] ctr_drbg_seed failed: " << errbuf << endl;
-            goto cleanup;
-        }
+    int ret;
+    const char *pers = "stats";
 
-        if ((ret = mbedtls_net_connect(&net, ep.host.c_str(), to_string(ep.port).c_str(),
-                                       MBEDTLS_NET_PROTO_TCP)) != 0) {
-            mbedtls_strerror(ret, errbuf, sizeof(errbuf));
-            cerr << "[TLS] connect failed: " << errbuf << endl;
-            goto cleanup;
-        }
+    if (mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const unsigned char *)pers, strlen(pers)) != 0)
+        goto cleanup;
 
-        if ((ret = mbedtls_ssl_config_defaults(&conf,
-                MBEDTLS_SSL_IS_CLIENT,
-                MBEDTLS_SSL_TRANSPORT_STREAM,
-                MBEDTLS_SSL_PRESET_DEFAULT)) != 0) {
-            mbedtls_strerror(ret, errbuf, sizeof(errbuf));
-            cerr << "[TLS] ssl_config_defaults failed: " << errbuf << endl;
-            goto cleanup;
-        }
+    if (mbedtls_net_connect(&net, ep.host.c_str(), to_string(ep.port).c_str(), MBEDTLS_NET_PROTO_TCP) != 0)
+        goto cleanup;
 
-        // Cloudflare-compatible TLS
-        mbedtls_ssl_conf_min_version(&conf, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3);
-        mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
-        mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+    // Setup SSL Config
+    mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
 
-        if ((ret = mbedtls_ssl_setup(&ssl, &conf)) != 0) {
-            mbedtls_strerror(ret, errbuf, sizeof(errbuf));
-            cerr << "[TLS] ssl_setup failed: " << errbuf << endl;
-            goto cleanup;
-        }
-        if ((ret = mbedtls_ssl_set_hostname(&ssl, ep.host.c_str())) != 0) {
-            mbedtls_strerror(ret, errbuf, sizeof(errbuf));
-            cerr << "[TLS] set_hostname failed: " << errbuf << endl;
-            goto cleanup;
-        }
-        mbedtls_ssl_set_bio(&ssl, &net, mbedtls_net_send, mbedtls_net_recv, NULL);
+    // Note: In mbedTLS 3.x this changes, but we are using 2.28
+    mbedtls_ssl_conf_min_version(&conf, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3);
 
-        if ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
-            mbedtls_strerror(ret, errbuf, sizeof(errbuf));
-            cerr << "[TLS] handshake failed: " << errbuf << endl;
-            goto cleanup;
-        }
+    // WARNING: VERIFY_NONE is insecure. For production, load CAs and use VERIFY_REQUIRED.
+    mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
+    mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+    mbedtls_ssl_setup(&ssl, &conf);
+    mbedtls_ssl_set_hostname(&ssl, ep.host.c_str());
+    mbedtls_ssl_set_bio(&ssl, &net, mbedtls_net_send, mbedtls_net_recv, NULL);
 
-        ret = mbedtls_ssl_write(&ssl, (const unsigned char*)req.c_str(), req.size());
-        if (ret <= 0) {
-            mbedtls_strerror(ret, errbuf, sizeof(errbuf));
-            cerr << "[TLS] write failed: " << errbuf << endl;
-        } else {
-            // cout << "[sent] " << json << endl;
-        }
+    if (mbedtls_ssl_handshake(&ssl) == 0)
+    {
+        mbedtls_ssl_write(&ssl, (const unsigned char *)req.c_str(), req.size());
+    }
 
-    cleanup:
-        mbedtls_ssl_close_notify(&ssl);
-        mbedtls_net_free(&net);
-        mbedtls_ssl_free(&ssl);
-        mbedtls_ssl_config_free(&conf);
-        mbedtls_ctr_drbg_free(&ctr_drbg);
-        mbedtls_entropy_free(&entropy); })
-        .detach();
+cleanup:
+    mbedtls_net_free(&net);
+    mbedtls_ssl_free(&ssl);
+    mbedtls_ssl_config_free(&conf);
+    mbedtls_ctr_drbg_free(&ctr_drbg);
+    mbedtls_entropy_free(&entropy);
+}
+
+// =======================================================
+// Background Worker
+// =======================================================
+void worker_thread(Endpoint ep, string apiKey)
+{
+    while (true)
+    {
+        unique_lock<mutex> lock(queueMutex);
+        queueCv.wait(lock, []
+                     { return !payloadQueue.empty(); });
+
+        string json = payloadQueue.front();
+        payloadQueue.pop();
+        lock.unlock();
+
+        perform_request(ep, json, apiKey);
+    }
 }
 
 // =======================================================
@@ -226,7 +231,6 @@ int main(int argc, char *argv[])
     if (argc < 4)
     {
         cerr << "Usage: " << argv[0] << " <endpoint> <server_name> <api_key>\n";
-        cerr << "Example: ./stats_logger http://127.0.0.1:3000/system-stats vds5223 mysecretkey\n";
         return 1;
     }
 
@@ -237,8 +241,9 @@ int main(int argc, char *argv[])
     string serverName = argv[2];
     string apiKey = argv[3];
 
-    // cout << "Sending stats to " << ep.scheme << "://" << ep.host
-    //      << ":" << ep.port << ep.path << " as " << serverName << endl;
+    // Start background sender
+    thread sender(worker_thread, ep, apiKey);
+    sender.detach();
 
     while (true)
     {
@@ -254,7 +259,16 @@ int main(int argc, char *argv[])
                       ",\"disk\":" + to_string(disk) +
                       ",\"inode\":" + to_string(inode) + "}";
 
-        send_post_async(ep, json, apiKey);
+        // Add to queue (limit size to prevent RAM explosion if net is down)
+        {
+            lock_guard<mutex> lock(queueMutex);
+            if (payloadQueue.size() < 50)
+            {
+                payloadQueue.push(json);
+            }
+        }
+        queueCv.notify_one();
+
         this_thread::sleep_for(chrono::seconds(5));
     }
 }
