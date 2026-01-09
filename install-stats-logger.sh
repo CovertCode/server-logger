@@ -4,7 +4,8 @@ set -e
 # -----------------------------
 # Configuration
 # -----------------------------
-BINARY_URL="https://github.com/CovertCode/server-logger/raw/refs/heads/main/stats_logger"
+# Base URL where files are stored
+REPO_URL="https://github.com/CovertCode/server-logger/raw/refs/heads/main"
 SERVICE_NAME="stats_logger"
 INSTALL_PATH="/usr/local/bin/$SERVICE_NAME"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -16,6 +17,22 @@ DEFAULT_ENDPOINT="http://152.53.50.193:14782/system-stats"
 function info()    { echo -e "\033[1;34m→\033[0m $1"; }
 function success() { echo -e "\033[1;32m✓\033[0m $1"; }
 function error_exit() { echo -e "\033[1;31m✗ $1\033[0m"; exit 1; }
+
+# -----------------------------
+# Detect Architecture
+# -----------------------------
+ARCH=$(uname -m)
+if [[ "$ARCH" == "x86_64" ]]; then
+    BINARY_NAME="stats_logger_amd64"
+    info "Detected Architecture: AMD64 (Intel/AMD)"
+elif [[ "$ARCH" == "aarch64" ]]; then
+    BINARY_NAME="stats_logger_arm64"
+    info "Detected Architecture: ARM64"
+else
+    error_exit "Unsupported architecture: $ARCH"
+fi
+
+BINARY_URL="${REPO_URL}/${BINARY_NAME}"
 
 # -----------------------------
 # Parse arguments
@@ -35,8 +52,12 @@ ENDPOINT=${ENDPOINT:-$DEFAULT_ENDPOINT}
 # Install tools (wget, curl)
 # -----------------------------
 info "Installing dependencies..."
-sudo apt update -y
-sudo apt install -y wget curl >/dev/null 2>&1 || true
+if command -v apt-get &> /dev/null; then
+    sudo apt-get update -y -q
+    sudo apt-get install -y -q wget curl
+elif command -v yum &> /dev/null; then
+    sudo yum install -y -q wget curl
+fi
 success "Dependencies installed."
 
 # -----------------------------
@@ -69,8 +90,8 @@ success "Clean slate prepared."
 # -----------------------------
 # Download universal static binary
 # -----------------------------
-info "Downloading stats_logger binary..."
-sudo wget -q -O "$INSTALL_PATH" "$BINARY_URL" || error_exit "Failed to download binary."
+info "Downloading $BINARY_NAME..."
+sudo wget -q -O "$INSTALL_PATH" "$BINARY_URL" || error_exit "Failed to download binary from $BINARY_URL"
 sudo chmod +x "$INSTALL_PATH"
 success "Binary installed at $INSTALL_PATH"
 
@@ -78,7 +99,6 @@ success "Binary installed at $INSTALL_PATH"
 # Increase inotify limits safely
 # -----------------------------
 info "Applying inotify limit fixes..."
-
 grep -q "fs.inotify.max_user_watches" /etc/sysctl.conf \
   && sudo sed -i 's/^fs\.inotify\.max_user_watches=.*/fs.inotify.max_user_watches=524288/' /etc/sysctl.conf \
   || echo "fs.inotify.max_user_watches=524288" | sudo tee -a /etc/sysctl.conf >/dev/null
@@ -87,7 +107,7 @@ grep -q "fs.inotify.max_user_instances" /etc/sysctl.conf \
   && sudo sed -i 's/^fs\.inotify\.max_user_instances=.*/fs.inotify.max_user_instances=1024/' /etc/sysctl.conf \
   || echo "fs.inotify.max_user_instances=1024" | sudo tee -a /etc/sysctl.conf >/dev/null
 
-sudo sysctl -p >/dev/null
+sudo sysctl -p >/dev/null 2>&1 || true
 success "Inotify limits applied."
 
 # -----------------------------
@@ -141,4 +161,5 @@ echo ""
 success "🎉 Installation complete! Stats logger is now running."
 echo "→ Endpoint: $ENDPOINT"
 echo "→ Server:   $SERVER_NAME"
+echo "→ Arch:     $ARCH"
 echo ""
