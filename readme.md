@@ -16,3 +16,11 @@ bash <(wget -qO- https://cdn.statically.io/gh/CovertCode/server-logger/main/inst
 
 sudo wget -O /usr/local/bin/stats_logger https://cdn.statically.io/gh/CovertCode/server-logger/main/stats_logger
 sudo chmod +x /usr/local/bin/stats_logger
+
+## Logger Build
+
+# 1. For Intel/AMD
+zig c++ -target x86_64-linux-musl -O3 -static stats_logger.cpp -o stats_logger_amd64
+
+# 2. For ARM
+zig c++ -target aarch64-linux-musl -O3 -static stats_logger.cpp -o stats_logger_arm64
